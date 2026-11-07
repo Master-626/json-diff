@@ -4,6 +4,10 @@
 
 [English / 完整文档](README.md) · [示例文件](examples) · [贡献指南](CONTRIBUTING.md)
 
+![真实命令行输出：一个用户的角色改变，另一个用户新增，退出码为 1。](docs/demo.svg)
+
+演示由[生成脚本](docs/generate_demo.py)实际运行仓库示例后生成，并附[纯文本输出](docs/demo.txt)。退出码 `1` 表示发现差异。
+
 ## 快速使用
 
 需要 Python 3.8 或更新版本。请从**本仓库源码**安装；我们没有验证软件包仓库中同名 `json-diff` 包属于这个项目。

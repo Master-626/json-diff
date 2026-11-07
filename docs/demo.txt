@@ -1,0 +1,12 @@
+$ json-diff compare examples/expected.json examples/actual.json \
+    --ignore-path /meta/request_id --ignore-path /meta/generated_at
+
+Found 2 differences:
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Path          ┃ Type    ┃ Old value ┃ New value                                  ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ users[0].role │ changed │ "reader"  │ "admin"                                    │
+│ users[1]      │ added   │ (missing) │ {"id": 2, "name": "Lin", "role": "reader"} │
+└───────────────┴─────────┴───────────┴────────────────────────────────────────────┘
+
+Exit code: 1 (differences found)

@@ -25,3 +25,7 @@ Include the exact command, Python version, operating system, two small JSON inpu
 ## Scope
 
 The immediate scope is deterministic comparison of saved JSON responses, clear output contracts and useful offline reports. Proposed array matching, numerical tolerance or patch formats need explicit semantics and tests before implementation. No performance or compatibility guarantees should be added without evidence.
+
+## Updating the README demo
+
+After installing the checkout, run `python docs/generate_demo.py`. It executes the CLI against the bundled example files, checks the structured diff and exit status, and renders the actual terminal output into `docs/demo.svg` and `docs/demo.txt`. Review both outputs before committing. Do not manually invent output or performance claims for the demo.

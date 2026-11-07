@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="812" height="380" viewBox="0 0 812 380" role="img" aria-labelledby="title desc">
+<title id="title">JSON Diff: two changes in a saved API response</title>
+<desc id="desc">Actual CLI output from the bundled examples: one role changed and one user added. Volatile metadata is ignored. Exit status is 1.</desc>
+<rect width="812" height="380" rx="16" fill="#0f172a"/>
+<text x="28" y="36" fill="#94a3b8" font-family="sans-serif" font-size="16">JSON DIFF · SAVED RESPONSE CHECK</text>
+<path d="M28 53 H784" stroke="#334155"/>
+<g font-family="DejaVu Sans Mono, monospace" font-size="14" xml:space="preserve">
+<text x="28" y="88" fill="#7dd3fc">$ json-diff compare examples/expected.json examples/actual.json \</text>
+<text x="28" y="111" fill="#7dd3fc">    --ignore-path /meta/request_id --ignore-path /meta/generated_at</text>
+<text x="28" y="134" fill="#e2e8f0"></text>
+<text x="28" y="157" fill="#e2e8f0">Found 2 differences:</text>
+<text x="28" y="180" fill="#e2e8f0">┏━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</text>
+<text x="28" y="203" fill="#e2e8f0">┃ Path          ┃ Type    ┃ Old value ┃ New value                                  ┃</text>
+<text x="28" y="226" fill="#e2e8f0">┡━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩</text>
+<text x="28" y="249" fill="#e2e8f0">│ users[0].role │ changed │ "reader"  │ "admin"                                    │</text>
+<text x="28" y="272" fill="#e2e8f0">│ users[1]      │ added   │ (missing) │ {"id": 2, "name": "Lin", "role": "reader"} │</text>
+<text x="28" y="295" fill="#e2e8f0">└───────────────┴─────────┴───────────┴────────────────────────────────────────────┘</text>
+<text x="28" y="318" fill="#e2e8f0"></text>
+<text x="28" y="341" fill="#fcd34d">Exit code: 1 (differences found)</text>
+</g>
+</svg>

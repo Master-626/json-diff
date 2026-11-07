@@ -4,6 +4,10 @@ Compare saved API responses and JSON documents in your terminal or CI. Ignore vo
 
 [简体中文](README.zh-CN.md) · [Examples](examples) · [Contributing](CONTRIBUTING.md)
 
+![Actual CLI output: one user role changed, another user added, and exit code 1.](docs/demo.svg)
+
+Rendered from the bundled examples with [this script](docs/generate_demo.py). [Plain-text transcript](docs/demo.txt). Exit `1` means differences were found.
+
 ## Quick start
 
 Python 3.8 or newer. Install **this repository** from source; the `json-diff` name on a package registry is not a verified distribution of this project.
