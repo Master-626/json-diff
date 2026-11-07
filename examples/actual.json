@@ -1,0 +1,7 @@
+{
+  "meta": {"request_id": "new-request", "generated_at": "2026-01-02T12:00:00Z"},
+  "users": [
+    {"id": 1, "name": "Ada", "role": "admin"},
+    {"id": 2, "name": "Lin", "role": "reader"}
+  ]
+}

@@ -1,121 +1,139 @@
-"""CLI interface for json-diff."""
+"""CLI interface for comparing saved API responses and JSON documents."""
 
+import json
+import os
 import sys
+import tempfile
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
-from .comparator import compare_json, load_json, format_value
+from . import __version__
+from .comparator import compare_json, format_value, load_json, load_json_stream
+from .report import render_report
 
-console = Console()
+
+class InputError(click.ClickException):
+    exit_code = 2
+
+
+def _options(command):
+    command = click.option(
+        "--ignore-path", multiple=True, help="Ignore a JSON Pointer; * matches one key/index."
+    )(command)
+    return click.option(
+        "--ignore", "-i", multiple=True, help="Ignore this object key at every depth. Repeatable."
+    )(command)
+
+
+def _compare(file1, file2, ignore, ignore_path):
+    if file1 == file2 == "-":
+        raise InputError("Only one input may be stdin (-).")
+    objects = []
+    for filename in (file1, file2):
+        try:
+            objects.append(load_json_stream(sys.stdin) if filename == "-" else load_json(filename))
+        except (OSError, ValueError, UnicodeError, RecursionError) as error:
+            raise InputError("Cannot read {!r}: {}".format(filename, error)) from error
+    try:
+        return compare_json(*objects, ignore_fields=list(ignore), ignore_paths=list(ignore_path))
+    except (ValueError, RecursionError) as error:
+        raise InputError("Cannot compare inputs: {}".format(error)) from error
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=__version__)
 def main():
-    """JSON Diff - Compare JSON files with colored output."""
-    pass
+    """Compare saved API responses and JSON files. Use - for one stdin input."""
 
 
 @main.command()
-@click.argument("file1", type=click.Path(exists=True))
-@click.argument("file2", type=click.Path(exists=True))
-@click.option("--ignore", "-i", multiple=True, help="Fields to ignore (can be used multiple times)")
-@click.option("--json-output", is_flag=True, help="Output diff as JSON")
-def compare(file1, file2, ignore, json_output):
-    """Compare two JSON files and show differences."""
-    obj1 = load_json(file1)
-    obj2 = load_json(file2)
-
-    diffs = compare_json(obj1, obj2, ignore_fields=list(ignore))
-
-    if not diffs:
-        console.print("[bold green]✓ No differences found![/bold green]")
-        sys.exit(0)
-
+@click.argument("file1", type=click.Path(dir_okay=False, allow_dash=True))
+@click.argument("file2", type=click.Path(dir_okay=False, allow_dash=True))
+@_options
+@click.option("--json-output", is_flag=True, help="Always emit a JSON array, even when equal.")
+@click.option("--quiet", "-q", is_flag=True, help="No stdout; report status using the exit code.")
+def compare(file1, file2, ignore, ignore_path, json_output, quiet):
+    """Exit 0 when equal, 1 when different, or 2 on input/usage errors."""
+    if quiet and json_output:
+        raise click.UsageError("--quiet and --json-output cannot be combined.")
+    diffs = _compare(file1, file2, ignore, ignore_path)
     if json_output:
-        import json
-        print(json.dumps(diffs, indent=2))
-    else:
-        console.print(f"[bold red]✗ Found {len(diffs)} differences:[/bold red]\n")
-
-        table = Table(show_header=True)
-        table.add_column("Path", style="cyan")
-        table.add_column("Type", style="yellow")
-        table.add_column("Old Value", style="red")
-        table.add_column("New Value", style="green")
-
-        for diff in diffs:
-            type_colors = {
-                "added": "green",
-                "removed": "red",
-                "changed": "yellow",
-            }
-            type_color = type_colors.get(diff["type"], "white")
-
-            table.add_row(
-                diff["path"],
-                f"[{type_color}]{diff['type']}[/{type_color}]",
-                format_value(diff["old_value"]),
-                format_value(diff["new_value"]),
-            )
-
-        console.print(table)
-
-    # Exit code 1 if differences found (for CI/CD)
-    sys.exit(1)
+        click.echo(json.dumps(diffs, indent=2, ensure_ascii=True, allow_nan=False))
+    elif not quiet:
+        console = Console()
+        if not diffs:
+            console.print("No differences found.", style="green")
+        else:
+            console.print("Found {} differences:".format(len(diffs)), style="bold red")
+            table = Table("Path", "Type", "Old value", "New value")
+            for diff in diffs:
+                table.add_row(
+                    Text(diff["path"]),
+                    Text(diff["type"]),
+                    Text(
+                        "(missing)" if diff["type"] == "added" else format_value(diff["old_value"])
+                    ),
+                    Text(
+                        "(missing)"
+                        if diff["type"] == "removed"
+                        else format_value(diff["new_value"])
+                    ),
+                )
+            console.print(table)
+    raise click.exceptions.Exit(1 if diffs else 0)
 
 
 @main.command()
-@click.argument("file1", type=click.Path(exists=True))
-@click.argument("file2", type=click.Path(exists=True))
-@click.option("--output", "-o", default="diff_report.html", help="Output HTML file")
-def report(file1, file2, output):
-    """Generate an HTML diff report."""
-    obj1 = load_json(file1)
-    obj2 = load_json(file2)
-
-    diffs = compare_json(obj1, obj2)
-
-    html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>JSON Diff Report</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .added { background-color: #d4edda; }
-        .removed { background-color: #f8d7da; }
-        .changed { background-color: #fff3cd; }
-    </style>
-</head>
-<body>
-    <h1>JSON Diff Report</h1>
-    <p><strong>File 1:</strong> {file1}</p>
-    <p><strong>File 2:</strong> {file2}</p>
-    <p><strong>Total differences:</strong> {count}</p>
-    <table>
-        <tr><th>Path</th><th>Type</th><th>Old Value</th><th>New Value</th></tr>
-        {rows}
-    </table>
-</body>
-</html>""".format(
-        file1=file1,
-        file2=file2,
-        count=len(diffs),
-        rows="\n".join(
-            f'<tr class="{d["type"]}"><td>{d["path"]}</td><td>{d["type"]}</td>'
-            f'<td>{d["old_value"]}</td><td>{d["new_value"]}</td></tr>'
-            for d in diffs
-        )
-    )
-
-    with open(output, "w", encoding="utf-8") as f:
-        f.write(html)
-
-    console.print(f"[bold green]✓ Report saved to {output}[/bold green]")
+@click.argument("file1", type=click.Path(dir_okay=False, allow_dash=True))
+@click.argument("file2", type=click.Path(dir_okay=False, allow_dash=True))
+@_options
+@click.option(
+    "--output",
+    "-o",
+    default="diff_report.html",
+    show_default=True,
+    type=click.Path(dir_okay=False),
+    help="Standalone HTML report path.",
+)
+@click.option(
+    "--fail-on-diff", is_flag=True, help="Exit 1 when different, after saving the report."
+)
+def report(file1, file2, ignore, ignore_path, output, fail_on_diff):
+    """Save an escaped, offline HTML report. Exit 2 on input/output errors."""
+    diffs = _compare(file1, file2, ignore, ignore_path)
+    temporary = None
+    try:
+        target = Path(output)
+        for source in (file1, file2):
+            if source != "-" and (
+                target.resolve() == Path(source).resolve()
+                or (target.exists() and os.path.samefile(target, source))
+            ):
+                raise InputError("Report output must not overwrite an input file.")
+        html = render_report(file1, file2, diffs)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=target.parent,
+            prefix=".json-diff-",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = stream.name
+            stream.write(html)
+        os.replace(temporary, target)
+        temporary = None
+    except (OSError, ValueError, RecursionError) as error:
+        raise InputError("Cannot write report {!r}: {}".format(output, error)) from error
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+    click.echo("Report saved to {} ({} differences).".format(output, len(diffs)))
+    raise click.exceptions.Exit(1 if fail_on_diff and diffs else 0)
 
 
 if __name__ == "__main__":

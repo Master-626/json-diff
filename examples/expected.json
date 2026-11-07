@@ -1,0 +1,4 @@
+{
+  "meta": {"request_id": "baseline", "generated_at": "2026-01-01T12:00:00Z"},
+  "users": [{"id": 1, "name": "Ada", "role": "reader"}]
+}

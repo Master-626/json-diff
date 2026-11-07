@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "json-diff"
-version = "0.1.0"
-description = "A powerful JSON comparison and diffing CLI tool with colored output and CI/CD support."
+version = "0.2.0"
+description = "Compare saved API responses with scoped ignores, JSON output and safe offline reports."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -35,8 +35,30 @@ json-diff = "json_diff.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.9.0",
+    "build>=1.0.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/Master-626/json-diff"
 Repository = "https://github.com/Master-626/json-diff"
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.coverage.run]
+source = ["json_diff"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90

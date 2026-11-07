@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8', '3.10', '3.12', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest --cov=json_diff --cov-report=term-missing
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: python -m build
+      - name: Smoke test installed wheel
+        run: |
+          python -m venv /tmp/json-diff-wheel
+          /tmp/json-diff-wheel/bin/python -m pip install dist/*.whl
+          /tmp/json-diff-wheel/bin/json-diff compare examples/expected.json examples/equivalent.json --ignore request_id --ignore generated_at --json-output
+          /tmp/json-diff-wheel/bin/json-diff report examples/expected.json examples/actual.json --output /tmp/report.html
