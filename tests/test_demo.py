@@ -10,7 +10,9 @@ def test_demo_generator_runs_cli_and_writes_accessible_svg(tmp_path):
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
         [sys.executable, str(root / "docs/generate_demo.py"), "--output-dir", str(tmp_path)],
-        cwd=tmp_path,
+        # Match the documented checkout workflow so pytest-cov 5 can find
+        # pyproject.toml before subprocess startup; output still goes to tmp_path.
+        cwd=root,
         capture_output=True,
         text=True,
     )
