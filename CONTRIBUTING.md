@@ -12,9 +12,10 @@ python -m pytest --cov=json_diff --cov-report=term-missing
 ruff check .
 ruff format --check .
 python -m build
+python scripts/smoke_wheel.py
 ```
 
-Tests cover core comparison, escaped JSON Pointers, ignore rules, strict input parsing, stdout/stderr and exit codes, stdin, HTML injection, and protection against overwriting input files. Coverage is a regression check, not proof that all edge cases are handled.
+Tests cover core comparison, escaped JSON Pointers, ignore rules, strict input parsing, exact-decimal precision and serialization, stdout/stderr and exit codes, stdin, HTML injection, and protection against overwriting input files. Coverage is a regression check, not proof that all edge cases are handled.
 
 Add a failing regression test before fixing a bug. For a new option, test both CLI commands where applicable, document its interaction with ignore rules, and state what happens when inputs are invalid. Keep supported Python versions working and avoid introducing network access to the comparison path.
 

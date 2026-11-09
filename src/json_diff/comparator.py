@@ -3,7 +3,10 @@
 import json
 import math
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, List, Optional, TextIO, Tuple
+
+from .serialization import dumps_json
 
 MAX_DEPTH = 200
 
@@ -32,10 +35,32 @@ def _float(value):
     return result
 
 
-def load_json_stream(stream: TextIO) -> Any:
-    """Read strict JSON, rejecting duplicate keys and non-finite numbers."""
+def _decimal(value):
+    try:
+        result = Decimal(value)
+    except InvalidOperation as error:
+        raise InvalidJSON(
+            "Number is outside the supported decimal range: {}".format(value)
+        ) from error
+    # Decimal construction is exact and does not use context precision, but an
+    # unsupported exponent can return NaN if the caller disabled its trap.
+    if not result.is_finite():
+        raise InvalidJSON("Number is outside the supported decimal range: {}".format(value))
+    return result
+
+
+def load_json_stream(stream: TextIO, *, exact_decimals: bool = False) -> Any:
+    """Read strict JSON; optionally decode decimal/exponent tokens as Decimal.
+
+    The default retains the legacy binary-float API. Exact mode avoids rounding,
+    overflow and underflow within Decimal's supported exponent range. Integer
+    tokens remain integers. Duplicate keys and non-finite tokens are rejected.
+    """
     value = json.load(
-        stream, object_pairs_hook=_object, parse_constant=_constant, parse_float=_float
+        stream,
+        object_pairs_hook=_object,
+        parse_constant=_constant,
+        parse_float=_decimal if exact_decimals else _float,
     )
     # Bound traversal/serialization depth even if the platform decoder accepts
     # deeper input. Walking iteratively avoids spending another recursion stack.
@@ -52,10 +77,10 @@ def load_json_stream(stream: TextIO) -> Any:
     return value
 
 
-def load_json(file_path: str) -> Any:
+def load_json(file_path: str, *, exact_decimals: bool = False) -> Any:
     """Read a UTF-8 JSON file. A leading UTF-8 BOM is accepted."""
     with open(file_path, "r", encoding="utf-8-sig") as stream:
-        return load_json_stream(stream)
+        return load_json_stream(stream, exact_decimals=exact_decimals)
 
 
 def _patterns(paths: Iterable[str]) -> List[Tuple[str, ...]]:
@@ -93,7 +118,7 @@ def compare_json(
     *,
     ignore_paths: Optional[List[str]] = None,
 ) -> List[Dict]:
-    """Compare JSON-compatible values without modifying them.
+    """Compare JSON-compatible values (including Decimal) without modifying them.
 
     Object keys are sorted; arrays are compared by index, including tails.
     ``ignore_fields`` skips exact object-key names at every depth.
@@ -165,7 +190,7 @@ def compare_json(
 
 def format_value(value: Any, max_len: Optional[int] = 50) -> str:
     """Display JSON literals, escaping control characters and preserving null."""
-    text = json.dumps(value, ensure_ascii=True, sort_keys=True, allow_nan=False)
+    text = dumps_json(value, sort_keys=True)
     if max_len is not None and len(text) > max_len:
         return text[:max_len] + "..."
     return text
