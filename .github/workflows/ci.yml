@@ -10,11 +10,17 @@ permissions:
 jobs:
   test:
     # Python 3.8 binaries are available on 22.04, not newer runner images.
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-22.04]
         python: ['3.8', '3.10', '3.12', '3.14']
+        include:
+          - os: windows-latest
+            python: '3.12'
+          - os: macos-latest
+            python: '3.12'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,8 +32,4 @@ jobs:
       - run: ruff format --check .
       - run: python -m build
       - name: Smoke test installed wheel
-        run: |
-          python -m venv /tmp/json-diff-wheel
-          /tmp/json-diff-wheel/bin/python -m pip install dist/*.whl
-          /tmp/json-diff-wheel/bin/json-diff compare examples/expected.json examples/equivalent.json --ignore request_id --ignore generated_at --json-output
-          /tmp/json-diff-wheel/bin/json-diff report examples/expected.json examples/actual.json --output /tmp/report.html
+        run: python scripts/smoke_wheel.py

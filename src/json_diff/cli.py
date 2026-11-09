@@ -1,6 +1,5 @@
 """CLI interface for comparing saved API responses and JSON documents."""
 
-import json
 import os
 import sys
 import tempfile
@@ -14,6 +13,7 @@ from rich.text import Text
 from . import __version__
 from .comparator import compare_json, format_value, load_json, load_json_stream
 from .report import render_report
+from .serialization import dumps_json
 
 
 class InputError(click.ClickException):
@@ -22,6 +22,11 @@ class InputError(click.ClickException):
 
 def _options(command):
     command = click.option(
+        "--exact-decimals",
+        is_flag=True,
+        help="Compare decimal/exponent numbers exactly instead of using binary floats.",
+    )(command)
+    command = click.option(
         "--ignore-path", multiple=True, help="Ignore a JSON Pointer; * matches one key/index."
     )(command)
     return click.option(
@@ -29,13 +34,17 @@ def _options(command):
     )(command)
 
 
-def _compare(file1, file2, ignore, ignore_path):
+def _compare(file1, file2, ignore, ignore_path, exact_decimals):
     if file1 == file2 == "-":
         raise InputError("Only one input may be stdin (-).")
     objects = []
     for filename in (file1, file2):
         try:
-            objects.append(load_json_stream(sys.stdin) if filename == "-" else load_json(filename))
+            objects.append(
+                load_json_stream(sys.stdin, exact_decimals=exact_decimals)
+                if filename == "-"
+                else load_json(filename, exact_decimals=exact_decimals)
+            )
         except (OSError, ValueError, UnicodeError, RecursionError) as error:
             raise InputError("Cannot read {!r}: {}".format(filename, error)) from error
     try:
@@ -56,13 +65,13 @@ def main():
 @_options
 @click.option("--json-output", is_flag=True, help="Always emit a JSON array, even when equal.")
 @click.option("--quiet", "-q", is_flag=True, help="No stdout; report status using the exit code.")
-def compare(file1, file2, ignore, ignore_path, json_output, quiet):
+def compare(file1, file2, ignore, ignore_path, exact_decimals, json_output, quiet):
     """Exit 0 when equal, 1 when different, or 2 on input/usage errors."""
     if quiet and json_output:
         raise click.UsageError("--quiet and --json-output cannot be combined.")
-    diffs = _compare(file1, file2, ignore, ignore_path)
+    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals)
     if json_output:
-        click.echo(json.dumps(diffs, indent=2, ensure_ascii=True, allow_nan=False))
+        click.echo(dumps_json(diffs, indent=2))
     elif not quiet:
         console = Console()
         if not diffs:
@@ -102,9 +111,9 @@ def compare(file1, file2, ignore, ignore_path, json_output, quiet):
 @click.option(
     "--fail-on-diff", is_flag=True, help="Exit 1 when different, after saving the report."
 )
-def report(file1, file2, ignore, ignore_path, output, fail_on_diff):
+def report(file1, file2, ignore, ignore_path, exact_decimals, output, fail_on_diff):
     """Save an escaped, offline HTML report. Exit 2 on input/output errors."""
-    diffs = _compare(file1, file2, ignore, ignore_path)
+    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals)
     temporary = None
     try:
         target = Path(output)

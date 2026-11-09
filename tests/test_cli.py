@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from json_diff.cli import main
+from json_diff.report import render_report
 
 
 @pytest.fixture
@@ -139,8 +140,8 @@ class Tags(HTMLParser):
 
 
 def test_report_escapes_keys_values_and_filenames(runner, tmp_path):
-    # Filename includes markup without path separators, valid on POSIX.
-    old, new = tmp_path / "<b>old.json", tmp_path / "new.json"
+    # Ampersands need HTML escaping and are valid in Windows and POSIX filenames.
+    old, new = tmp_path / "old&name.json", tmp_path / "new.json"
     old.write_text("{}")
     payload = '<script>alert("x")</script><img src=x onerror=alert(1)>'
     new.write_text(json.dumps({payload: payload, "nil": None, "long": "x" * 300}))
@@ -150,6 +151,7 @@ def test_report_escapes_keys_values_and_filenames(runner, tmp_path):
     html = target.read_text(encoding="utf-8")
     assert "font-family:" in html
     assert "Content-Security-Policy" in html
+    assert "old&amp;name.json" in html
     assert "<script>" not in html and "<img" not in html and "<b>" not in html
     parser = Tags()
     parser.feed(html)
@@ -157,6 +159,13 @@ def test_report_escapes_keys_values_and_filenames(runner, tmp_path):
     assert any(json.dumps(payload) in text for text in parser.text)
     assert "x" * 300 in html
     assert "(missing)" in html and "null" in html
+
+
+def test_report_escapes_markup_in_arbitrary_display_names():
+    # Display names need not be filesystem paths; test markup on every platform.
+    html = render_report("<b>old.json", '<script>alert("x")</script>', [])
+    assert "<b>" not in html and "<script>" not in html
+    assert "&lt;b&gt;old.json" in html and "&lt;script&gt;" in html
 
 
 @pytest.mark.parametrize("fail_on_diff,expected", [(False, 0), (True, 1)])

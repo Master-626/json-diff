@@ -52,7 +52,25 @@ json-diff compare expected.json actual.json --quiet
 | `1` | Differences found |
 | `2` | Invalid JSON, unreadable input, or usage error |
 
-Malformed JSON, duplicate object keys, `NaN`, infinities and floating-point overflow are rejected rather than silently accepted. Input files use UTF-8; a leading UTF-8 BOM is accepted for files.
+Malformed JSON, duplicate object keys, `NaN` and infinities are rejected rather than silently accepted. The default binary-float mode also rejects floating-point overflow. Input files use UTF-8; a leading UTF-8 BOM is accepted for files.
+
+### Exact decimal comparison
+
+Use `--exact-decimals` on either command when the digits in JSON numbers matter:
+
+```bash
+json-diff compare expected.json actual.json --exact-decimals --json-output
+json-diff report expected.json actual.json --exact-decimals -o report.html --fail-on-diff
+```
+
+The option decodes numbers containing a decimal point or exponent using Python's `Decimal`, without rounding them to a binary float. It detects `0.10000000000000000` versus `0.10000000000000001` and `1e-400` versus `0.0`; both pairs compare equal in the default mode. Finite values such as `1e400` are accepted in exact mode, within the platform's Decimal exponent range. Unsupported exponents are input errors (exit `2`).
+
+- Integer tokens remain integers: `1` and `1.0` still differ, as do `1` and `1e0`.
+- Decimal values compare numerically: `1.0`, `1.00` and `1e0` are equal; signed decimal zeros are equal. Original spelling and trailing-zero counts are not compared.
+- JSON and HTML reports retain the full numeric value, including nested added/removed containers. JSON uses number tokens, never quoted numbers. A decimal point or exponent is retained so an exact parser can distinguish decimals from integers.
+- The default remains binary floats for compatibility. Existing Python floats cannot recover digits already lost before calling this library. Exact mode is not a tolerance, currency rounding or financial validation feature.
+
+Consumers of JSON output must also use an exact parser, for example `json.loads(text, parse_float=Decimal)` in Python. Parsing the report into JavaScript `Number` or Python `float` can lose precision again.
 
 ### Ignore exactly what is volatile
 
@@ -143,11 +161,25 @@ diffs = compare_json(
 
 Pass JSON-compatible values. Comparison does not modify them. The optional legacy `path` argument prefixes display paths only; pointers always start at the compared document's root.
 
+For exact input, pass `exact_decimals=True` to **both** `load_json` calls (also supported by `load_json_stream`). These loaders return `Decimal` for decimal/exponent tokens and `int` for integer tokens. `compare_json` keeps strict Python types, including distinguishing a caller-supplied `float` from `Decimal`.
+
+```python
+from json_diff.serialization import dumps_json
+
+diffs = compare_json(
+    load_json("expected.json", exact_decimals=True),
+    load_json("actual.json", exact_decimals=True),
+)
+print(dumps_json(diffs, indent=2))
+```
+
+Use `dumps_json` for Decimal-containing results; the standard `json.dumps` does not support Decimal. It accepts JSON values with string object keys plus finite Decimal values, escapes strings and rejects non-finite numbers and circular containers. Do not convert Decimal values to float or use `default=str`, which changes JSON numbers into strings.
+
 ## Comparison rules and limits
 
 - Object keys are visited in sorted order for stable output.
 - Arrays are compared **by index**, with each added or removed tail element reported. Reordering, or inserting an element in the middle, can produce multiple differences. There is no ID-based matching or minimum-edit algorithm.
-- Types are strict: `true`, `1` and `1.0` are distinct. Numbers use Python's JSON decoder, so decimal values use binary floating point. This is not an exact-decimal financial comparison tool.
+- Types are strict: `true`, `1` and `1.0` are distinct. Decimal values use binary floating point by default; opt in to `--exact-decimals` to compare their exact numeric values. No financial or business-rule validation is performed.
 - Inputs and results are held in memory. Files with more than 200 nested containers are rejected with an input error. There is no streaming mode, schema validation, tolerance option, patch application, or automatic compatibility assessment. A data difference is not necessarily a breaking API change.
 
 For minimal array diffs or patch formats, see [jd](https://github.com/josephburnett/jd). For CSV/TSV or flat JSON rows matched by an ID, see [csv-diff](https://github.com/simonw/csv-diff). This project focuses on a small Python CLI for saved JSON regression checks.

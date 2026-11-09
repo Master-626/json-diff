@@ -52,11 +52,29 @@ json-diff report expected.json actual.json -o report.html --fail-on-diff
 
 JSON 输出中的 `pointer` 是 RFC 6901 JSON Pointer，可准确区分含点号、斜杠等字符的键名。根节点的 pointer 是空字符串。忽略路径中的 `/` 和 `~` 分别编码为 `~1` 和 `~0`。
 
+## 精确小数比较
+
+两个命令均支持显式开启 `--exact-decimals`：
+
+```bash
+json-diff compare expected.json actual.json --exact-decimals --json-output
+json-diff report expected.json actual.json --exact-decimals -o report.html --fail-on-diff
+```
+
+该模式用 Python `Decimal` 精确读取带小数点或指数的数值，可识别 `0.10000000000000000` 与 `0.10000000000000001`、`1e-400` 与 `0.0` 的差异；默认二进制浮点模式会将这两组分别视为相等。精确模式也接受 `1e400` 等有限数，但受平台 Decimal 指数范围限制，超出范围返回输入错误（退出码 `2`）。
+
+- 整数与小数仍区分：`1` 与 `1.0`、`1` 与 `1e0` 均不同。`1.0`、`1.00`、`1e0` 数值相等，小数正负零也相等，不比较原始写法或末尾零的数量。
+- JSON 和 HTML 保留完整数值，包括整个容器的新增或删除。JSON 输出仍是数值，不转成字符串，并保留小数点或指数以区分整数。
+- 为兼容现有调用，默认仍使用二进制浮点数。已经转成 float 的数据无法恢复丢失的数字；该功能不提供容差、金额舍入或财务校验。
+- 读取差异报告时也需使用精确解析器，例如 Python 的 `json.loads(text, parse_float=Decimal)`。JavaScript `Number` 或 Python `float` 仍可能再次丢失精度。
+
+Python API 可在两次 `load_json` 或 `load_json_stream` 调用中都传入 `exact_decimals=True`。输出包含 Decimal 时，使用 `json_diff.serialization.dumps_json(diffs, indent=2)`，不要转成 float 或通过 `default=str` 把数值变成字符串。手动传入的 float 与 Decimal 仍按不同类型处理。
+
 ## 使用边界
 
 - 数组按下标比较，新增和删除尾部元素会单独报告；不支持按 ID 对齐或最小编辑距离。
-- 类型严格：`true`、`1`、`1.0` 互不相同。小数使用 Python 二进制浮点数，不适合要求精确十进制的财务比较。
-- 拒绝重复键、非法 JSON、非有限数和浮点数溢出。输入文件使用 UTF-8，可带 UTF-8 BOM。
+- 类型严格：`true`、`1`、`1.0` 互不相同。默认小数使用 Python 二进制浮点数；精确模式需显式开启。
+- 拒绝重复键、非法 JSON 和非有限数；默认模式还拒绝浮点数溢出。输入文件使用 UTF-8，可带 UTF-8 BOM。
 - 忽略一个容器会跳过其子树；整个容器新增、删除或类型改变时，会报告完整容器，子字段的忽略规则不会取消父节点变化。
 - 忽略规则不是脱敏工具。报告可能包含敏感数据，分享或上传 CI 附件前请检查。
 - 报告中的文件名、键和值会转义，不包含脚本或外部资源；禁止覆盖输入文件。
