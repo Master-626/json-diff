@@ -4,6 +4,7 @@ import copy
 import io
 import json
 import random
+from decimal import Decimal
 
 import pytest
 
@@ -228,3 +229,81 @@ def test_nesting_depth_limit_is_explicit():
     load_json_stream(io.StringIO("[" * 200 + "0" + "]" * 200))
     with pytest.raises(InvalidJSON, match="200 containers"):
         load_json_stream(io.StringIO("[" * 201 + "0" + "]" * 201))
+
+
+def test_stream_accepts_one_leading_bom_only():
+    assert load_json_stream(io.StringIO('\ufeff{"a": 1}')) == {"a": 1}
+    assert load_json_stream(io.StringIO("\ufeff1.50"), exact_decimals=True) == Decimal("1.50")
+    # A BOM character inside a JSON string is data, not an encoding mark.
+    assert load_json_stream(io.StringIO('"\ufeff"')) == "\ufeff"
+    with pytest.raises(json.JSONDecodeError):
+        load_json_stream(io.StringIO(' \ufeff{"a": 1}'))
+
+
+@pytest.mark.parametrize("value", ["id", b"id"])
+def test_bare_string_ignore_lists_are_rejected(value):
+    # ignore_fields="id" used to iterate characters and hide keys "i" and "d".
+    with pytest.raises(ValueError, match="ignore_fields must be a list of strings"):
+        compare_json({"i": 1, "d": 1, "id": 1}, {"i": 2, "d": 2, "id": 2}, ignore_fields=value)
+    # ignore_paths="//" used to mean two "/" pointers and hide the empty key.
+    with pytest.raises(ValueError, match="ignore_paths must be a list of strings"):
+        compare_json({"": 1}, {"": 2}, ignore_paths=value)
+    assert [d["pointer"] for d in compare_json({"": 1}, {"": 2}, ignore_paths=["//"])] == ["/"]
+    assert compare_json({"": {"": 1}}, {"": {"": 2}}, ignore_paths=["//"]) == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf"), Decimal("NaN"), Decimal("Infinity")],
+)
+def test_compared_non_finite_numbers_are_rejected(value):
+    with pytest.raises(ValueError, match="Non-finite"):
+        compare_json(value, value)
+    with pytest.raises(ValueError, match="Non-finite"):
+        compare_json({"n": 1}, {"n": value})
+
+
+def test_ignored_non_finite_values_are_not_inspected():
+    assert (
+        compare_json(
+            {"n": float("nan"), "a": 1},
+            {"n": float("inf"), "a": 1},
+            ignore_fields=["n"],
+        )
+        == []
+    )
+    assert compare_json(-0.0, 0.0) == []
+
+
+def test_cyclic_added_value_does_not_hang():
+    cycle = []
+    cycle.append(cycle)
+    diffs = compare_json({}, {"a": cycle})
+    assert diffs[0]["type"] == "added"
+    assert diffs[0]["new_value"] is cycle
+
+
+def test_ignore_added_skips_only_new_keys_and_tail_elements():
+    assert compare_json({"a": 1}, {"a": 1, "b": 2}) != []
+    assert compare_json({"a": 1}, {"a": 1, "b": {"n": 1}}, ignore_added=True) == []
+    removed = compare_json({"a": 1, "b": 2}, {"a": 1}, ignore_added=True)
+    assert [(d["pointer"], d["type"]) for d in removed] == [("/b", "removed")]
+    changed = compare_json(
+        {"user": {"name": "Ada"}, "role": "reader"},
+        {"user": {"name": "Bob", "extra": 1}, "role": "reader", "meta": {}},
+        ignore_added=True,
+    )
+    assert [(d["pointer"], d["type"]) for d in changed] == [("/user/name", "changed")]
+    assert compare_json([1], [1, 2], ignore_added=True) == []
+    assert compare_json([1, 2], [1], ignore_added=True)[0]["type"] == "removed"
+    # A middle insert still shifts later indexes; the flag is not an array alignment.
+    shifted = compare_json([1, 2], [9, 1, 2], ignore_added=True)
+    assert [d["pointer"] for d in shifted] == ["/0", "/1"]
+    assert compare_json({"a": {"b": 1}}, {"a": [1]}, ignore_added=True)[0]["type"] == "changed"
+    scoped = compare_json(
+        {"meta": {"id": 1}, "role": "reader"},
+        {"meta": {"id": 2}, "role": "admin", "extra": 1},
+        ignore_paths=["/meta/id"],
+        ignore_added=True,
+    )
+    assert [d["pointer"] for d in scoped] == ["/role"]

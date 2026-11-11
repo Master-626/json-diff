@@ -55,9 +55,13 @@ def load_json_stream(stream: TextIO, *, exact_decimals: bool = False) -> Any:
     The default retains the legacy binary-float API. Exact mode avoids rounding,
     overflow and underflow within Decimal's supported exponent range. Integer
     tokens remain integers. Duplicate keys and non-finite tokens are rejected.
+    A single leading U+FEFF (UTF-8 BOM) is ignored so stdin matches file input.
     """
-    value = json.load(
-        stream,
+    text = stream.read()
+    if isinstance(text, str) and text.startswith("\ufeff"):
+        text = text[1:]
+    value = json.loads(
+        text,
         object_pairs_hook=_object,
         parse_constant=_constant,
         parse_float=_decimal if exact_decimals else _float,
@@ -81,6 +85,45 @@ def load_json(file_path: str, *, exact_decimals: bool = False) -> Any:
     """Read a UTF-8 JSON file. A leading UTF-8 BOM is accepted."""
     with open(file_path, "r", encoding="utf-8-sig") as stream:
         return load_json_stream(stream, exact_decimals=exact_decimals)
+
+
+def _require_string_list(name, value):
+    """Return a list of strings. A bare string is not treated as one entry.
+
+    Iterating ``ignore_fields="id"`` would hide the keys ``i`` and ``d``.
+    Iterating ``ignore_paths="//"`` would apply the empty-key pointer ``/``
+    twice and hide a real change at that key.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        raise ValueError(
+            "{} must be a list of strings, not a {}.".format(name, type(value).__name__)
+        )
+    return list(value)
+
+
+def _non_finite(value):
+    """Raise when a visited value contains NaN or an infinity.
+
+    Ignored subtrees are not scanned. Containers are walked iteratively so a
+    self-referential value cannot hang the check.
+    """
+    stack = [value]
+    seen = set()
+    while stack:
+        current = stack.pop()
+        if isinstance(current, float):
+            if not math.isfinite(current):
+                raise ValueError("Non-finite number is not valid JSON")
+        elif isinstance(current, Decimal) and not Decimal.is_finite(current):
+            raise ValueError("Non-finite Decimal is not valid JSON")
+        elif isinstance(current, (dict, list)):
+            marker = id(current)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            stack.extend(current.values() if isinstance(current, dict) else current)
 
 
 def _patterns(paths: Iterable[str]) -> List[Tuple[str, ...]]:
@@ -117,18 +160,24 @@ def compare_json(
     ignore_fields: Optional[List[str]] = None,
     *,
     ignore_paths: Optional[List[str]] = None,
+    ignore_added: bool = False,
 ) -> List[Dict]:
     """Compare JSON-compatible values (including Decimal) without modifying them.
 
     Object keys are sorted; arrays are compared by index, including tails.
-    ``ignore_fields`` skips exact object-key names at every depth.
+    ``ignore_fields`` and ``ignore_paths`` must be lists of strings, not a
+    single string. ``ignore_fields`` skips exact object-key names at every depth.
     ``ignore_paths`` uses JSON Pointer segments; a whole ``*`` segment matches
     one key or index. Ignoring a container skips its entire subtree.
-    Each difference contains path, pointer, type, old_value and new_value.
+    ``ignore_added`` omits keys and array elements that exist only in ``obj2``.
+    Removals, edits and type changes are still reported. Inserting an array
+    element in the middle still changes later indexes.
+    Non-finite floats and Decimals that would be compared or reported are
+    rejected. Each difference contains path, pointer, type, old_value and new_value.
     The optional legacy ``path`` prefixes display paths only, not pointers.
     """
-    ignored_fields = set(ignore_fields or [])
-    patterns = _patterns(ignore_paths or [])
+    ignored_fields = set(_require_string_list("ignore_fields", ignore_fields))
+    patterns = _patterns(_require_string_list("ignore_paths", ignore_paths))
     diffs = []
 
     def ignored(parts):
@@ -141,6 +190,8 @@ def compare_json(
         )
 
     def emit(display, parts, kind, old, new):
+        _non_finite(old)
+        _non_finite(new)
         diffs.append(
             {
                 "path": display or "root",
@@ -164,6 +215,8 @@ def compare_json(
                     continue
                 child_display = _child_path(display, key)
                 if key not in old:
+                    if ignore_added:
+                        continue
                     emit(child_display, child_parts, "added", None, new[key])
                 elif key not in new:
                     emit(child_display, child_parts, "removed", old[key], None)
@@ -176,13 +229,18 @@ def compare_json(
                     continue
                 child_display = "{}[{}]".format(display, index)
                 if index >= len(old):
+                    if ignore_added:
+                        continue
                     emit(child_display, child_parts, "added", None, new[index])
                 elif index >= len(new):
                     emit(child_display, child_parts, "removed", old[index], None)
                 else:
                     visit(old[index], new[index], child_display, child_parts)
-        elif old != new:
-            emit(display, parts, "changed", old, new)
+        else:
+            _non_finite(old)
+            _non_finite(new)
+            if old != new:
+                emit(display, parts, "changed", old, new)
 
     visit(obj1, obj2, path, ())
     return diffs

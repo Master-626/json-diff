@@ -41,6 +41,9 @@ json-diff compare expected.json actual.json --ignore generated_at
 # 只忽略指定位置。* 匹配一层键名或数组下标，必须加引号。
 json-diff compare expected.json actual.json --ignore-path '/users/*/last_seen'
 
+# 第二个文件多出来的键或数组尾部元素不算失败；删除、改值和类型变化仍会报告。
+json-diff compare expected.json actual.json --ignore-added
+
 # 从标准输入读取其中一个文件。
 cat actual.json | json-diff compare expected.json -
 
@@ -49,6 +52,8 @@ json-diff report expected.json actual.json -o report.html --fail-on-diff
 ```
 
 `compare` 的退出码：`0` 表示相等，`1` 表示有差异，`2` 表示输入或用法错误。报错写入 stderr。`report` 默认在成功保存后返回 `0`；添加 `--fail-on-diff` 才会对差异返回 `1`。
+
+`--ignore-added` 适合“实际响应可以多字段”的兼容性检查。数组仍按下标比较，在中间插入元素时，后面的下标仍会报差异。标准输入和文件一样接受开头的 UTF-8 BOM。
 
 JSON 输出中的 `pointer` 是 RFC 6901 JSON Pointer，可准确区分含点号、斜杠等字符的键名。根节点的 pointer 是空字符串。忽略路径中的 `/` 和 `~` 分别编码为 `~1` 和 `~0`。
 
@@ -74,7 +79,7 @@ Python API 可在两次 `load_json` 或 `load_json_stream` 调用中都传入 `e
 
 - 数组按下标比较，新增和删除尾部元素会单独报告；不支持按 ID 对齐或最小编辑距离。
 - 类型严格：`true`、`1`、`1.0` 互不相同。默认小数使用 Python 二进制浮点数；精确模式需显式开启。
-- 拒绝重复键、非法 JSON 和非有限数；默认模式还拒绝浮点数溢出。输入文件使用 UTF-8，可带 UTF-8 BOM。
+- 拒绝重复键、非法 JSON 和非有限数；默认模式还拒绝浮点数溢出。文件和标准输入使用 UTF-8，开头的 UTF-8 BOM 会被接受。`compare_json` 在实际比较或写入结果时也会拒绝 `NaN` 和无穷大；被忽略的字段不会检查。
 - 忽略一个容器会跳过其子树；整个容器新增、删除或类型改变时，会报告完整容器，子字段的忽略规则不会取消父节点变化。
 - 忽略规则不是脱敏工具。报告可能包含敏感数据，分享或上传 CI 附件前请检查。
 - 报告中的文件名、键和值会转义，不包含脚本或外部资源；禁止覆盖输入文件。
