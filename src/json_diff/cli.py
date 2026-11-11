@@ -27,6 +27,11 @@ def _options(command):
         help="Compare decimal/exponent numbers exactly instead of using binary floats.",
     )(command)
     command = click.option(
+        "--ignore-added",
+        is_flag=True,
+        help="Do not report keys or array items that exist only in the second file.",
+    )(command)
+    command = click.option(
         "--ignore-path", multiple=True, help="Ignore a JSON Pointer; * matches one key/index."
     )(command)
     return click.option(
@@ -34,7 +39,7 @@ def _options(command):
     )(command)
 
 
-def _compare(file1, file2, ignore, ignore_path, exact_decimals):
+def _compare(file1, file2, ignore, ignore_path, exact_decimals, ignore_added):
     if file1 == file2 == "-":
         raise InputError("Only one input may be stdin (-).")
     objects = []
@@ -48,7 +53,12 @@ def _compare(file1, file2, ignore, ignore_path, exact_decimals):
         except (OSError, ValueError, UnicodeError, RecursionError) as error:
             raise InputError("Cannot read {!r}: {}".format(filename, error)) from error
     try:
-        return compare_json(*objects, ignore_fields=list(ignore), ignore_paths=list(ignore_path))
+        return compare_json(
+            *objects,
+            ignore_fields=list(ignore),
+            ignore_paths=list(ignore_path),
+            ignore_added=ignore_added,
+        )
     except (ValueError, RecursionError) as error:
         raise InputError("Cannot compare inputs: {}".format(error)) from error
 
@@ -65,11 +75,11 @@ def main():
 @_options
 @click.option("--json-output", is_flag=True, help="Always emit a JSON array, even when equal.")
 @click.option("--quiet", "-q", is_flag=True, help="No stdout; report status using the exit code.")
-def compare(file1, file2, ignore, ignore_path, exact_decimals, json_output, quiet):
+def compare(file1, file2, ignore, ignore_path, exact_decimals, ignore_added, json_output, quiet):
     """Exit 0 when equal, 1 when different, or 2 on input/usage errors."""
     if quiet and json_output:
         raise click.UsageError("--quiet and --json-output cannot be combined.")
-    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals)
+    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals, ignore_added)
     if json_output:
         click.echo(dumps_json(diffs, indent=2))
     elif not quiet:
@@ -111,9 +121,9 @@ def compare(file1, file2, ignore, ignore_path, exact_decimals, json_output, quie
 @click.option(
     "--fail-on-diff", is_flag=True, help="Exit 1 when different, after saving the report."
 )
-def report(file1, file2, ignore, ignore_path, exact_decimals, output, fail_on_diff):
+def report(file1, file2, ignore, ignore_path, exact_decimals, ignore_added, output, fail_on_diff):
     """Save an escaped, offline HTML report. Exit 2 on input/output errors."""
-    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals)
+    diffs = _compare(file1, file2, ignore, ignore_path, exact_decimals, ignore_added)
     temporary = None
     try:
         target = Path(output)

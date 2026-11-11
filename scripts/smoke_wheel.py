@@ -54,12 +54,17 @@ def main():
             Decimal("0.10000000000000001"),
             Decimal("1e-400"),
         ]
+        base, extra = work / "base.json", work / "extra.json"
+        base.write_text('{"role": "reader"}', encoding="utf-8")
+        extra.write_text('{"role": "reader", "extra": 1}', encoding="utf-8")
+        added = run("compare", base, extra, "--ignore-added", "--json-output")
+        assert added.returncode == 0 and json.loads(added.stdout) == [], added
         output = work / "report.html"
         report = run("report", old, new, "--exact-decimals", "--fail-on-diff", "-o", output)
         assert report.returncode == 1 and report.stderr == "", report
         html = output.read_text(encoding="utf-8")
         assert "0.10000000000000001" in html and "1E-400" in html
-    print("Installed-wheel smoke test passed: default, exact JSON and exact HTML.")
+    print("Installed-wheel smoke test passed: default, exact JSON, exact HTML and ignore-added.")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,17 @@ from html import escape
 from .comparator import format_value
 
 
+def _text(value):
+    """Escape markup and keep the report encodable as UTF-8.
+
+    JSON keys may contain lone surrogates (``\\uD800``). Those characters cannot
+    be written as UTF-8, so spell them as ``\\uXXXX`` before HTML escaping.
+    Ordinary non-ASCII text is left unchanged.
+    """
+    safe = str(value).encode("utf-8", "backslashreplace").decode("utf-8")
+    return escape(safe)
+
+
 def render_report(file1, file2, diffs):
     rows = []
     for diff in diffs:
@@ -16,7 +27,7 @@ def render_report(file1, file2, diffs):
         ]
         rows.append(
             "<tr>"
-            + "".join("<td><pre>{}</pre></td>".format(escape(cell)) for cell in cells)
+            + "".join("<td><pre>{}</pre></td>".format(_text(cell)) for cell in cells)
             + "</tr>"
         )
     # Join fixed markup rather than interpreting CSS braces as format fields.
@@ -39,8 +50,8 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
 <h1>JSON Diff Report</h1>
 """ + "\n".join(
         [
-            "<p><strong>Expected:</strong> {}</p>".format(escape(str(file1))),
-            "<p><strong>Actual:</strong> {}</p>".format(escape(str(file2))),
+            "<p><strong>Expected:</strong> {}</p>".format(_text(file1)),
+            "<p><strong>Actual:</strong> {}</p>".format(_text(file2)),
             "<p><strong>Total differences:</strong> {}</p>".format(len(diffs)),
             '<table><thead><tr><th scope="col">JSON Pointer</th><th scope="col">Type</th>'
             '<th scope="col">Old value</th><th scope="col">New value</th></tr></thead><tbody>',

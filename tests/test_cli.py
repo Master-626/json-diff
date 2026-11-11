@@ -292,6 +292,93 @@ def test_deeply_nested_input_is_friendly_error(runner, inputs, tmp_path):
     assert "Traceback" not in result.output
 
 
+def test_stdin_accepts_leading_bom(runner, tmp_path):
+    path = tmp_path / "old.json"
+    path.write_bytes(b'\xef\xbb\xbf{"a": 1}')
+    result = runner.invoke(
+        main, ["compare", str(path), "-", "--json-output"], input='\ufeff{"a": 1}'
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == []
+
+
+def test_report_encodes_surrogate_keys_and_keeps_unicode(runner, tmp_path):
+    old, new = tmp_path / "old.json", tmp_path / "new.json"
+    old.write_text(json.dumps({"\ud800": 1, "名字": 1}), encoding="utf-8")
+    new.write_text(json.dumps({"\ud800": 2, "名字": 2}), encoding="utf-8")
+    compared = runner.invoke(main, ["compare", str(old), str(new), "--json-output"])
+    assert compared.exit_code == 1, compared.output
+    assert any(item["pointer"] == "/\ud800" for item in json.loads(compared.output))
+    target = tmp_path / "report.html"
+    result = runner.invoke(main, ["report", str(old), str(new), "-o", str(target)])
+    assert result.exit_code == 0, result.output
+    text = target.read_text(encoding="utf-8")
+    assert "\\ud800" in text
+    assert "名字" in text
+    assert "<script>" not in text
+    html = render_report("a<b>\ud800.json", "新.json", [])
+    encoded = html.encode("utf-8")
+    assert b"\\ud800" in encoded
+    assert "新.json".encode("utf-8") in encoded
+    assert "<b>" not in html and "&lt;b&gt;" in html
+
+
+def test_ignore_added_keeps_edits_and_removals(runner, tmp_path):
+    old, new = tmp_path / "old.json", tmp_path / "new.json"
+    old.write_text('{"id": 1, "role": "reader", "n": 1.0}', encoding="utf-8")
+    new.write_text(
+        '{"id": 2, "role": "admin", "n": 1.00, "extra": 1e-400}',
+        encoding="utf-8",
+    )
+    bare = runner.invoke(main, ["compare", str(old), str(new), "--json-output"])
+    assert bare.exit_code == 1
+    assert any(item["type"] == "added" for item in json.loads(bare.output))
+    ignored = runner.invoke(
+        main,
+        [
+            "compare",
+            str(old),
+            str(new),
+            "--ignore",
+            "id",
+            "--ignore-added",
+            "--exact-decimals",
+            "--json-output",
+        ],
+    )
+    assert ignored.exit_code == 1, ignored.output
+    diffs = json.loads(ignored.output)
+    assert [item["pointer"] for item in diffs] == ["/role"]
+    removed = runner.invoke(
+        main,
+        ["compare", str(new), str(old), "--ignore-added", "--json-output"],
+    )
+    assert removed.exit_code == 1
+    assert any(item["type"] == "removed" for item in json.loads(removed.output))
+    report = tmp_path / "report.html"
+    saved = runner.invoke(
+        main,
+        [
+            "report",
+            str(old),
+            str(new),
+            "--ignore",
+            "id",
+            "--ignore",
+            "role",
+            "--ignore-added",
+            "--exact-decimals",
+            "--fail-on-diff",
+            "-o",
+            str(report),
+        ],
+    )
+    assert saved.exit_code == 0, saved.output
+    assert "No differences found." in report.read_text(encoding="utf-8")
+    for command in ("compare", "report"):
+        assert "--ignore-added" in runner.invoke(main, [command, "--help"]).output
+
+
 def test_documented_examples_are_executable(runner):
     root = Path(__file__).resolve().parents[1]
     expected = str(root / "examples" / "expected.json")
